@@ -48,17 +48,7 @@ export default StyleSheet.create({
   dividerText: { color: '#64748B', marginHorizontal: 12, fontSize: 13 },
 
   // Manual input
-  manualInput: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  input: {
-    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 13,
-    paddingHorizontal: 16, paddingVertical: 14,
-    color: '#1E293B', fontSize: 15,
-    borderWidth: 1, borderColor: '#E2E8F0',
-  },
-  searchBtn: {
-    backgroundColor: '#006EB7', borderRadius: 13, width: 52,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  manualInput: { marginBottom: 24, width: '100%' },
 
   // Demo
   demoTitle: {

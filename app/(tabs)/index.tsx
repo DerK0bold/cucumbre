@@ -1,25 +1,17 @@
 import { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-  Alert,
-  Image,
-  ScrollView,
-} from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert, Image, ScrollView } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { analyzeProductImage } from '../../services/aiAssistant';
 import { searchProductsByName } from '../../services/openFoodFacts';
+import { BarcodeCameraView } from '../../components/organisms/BarcodeCameraView';
+import { OcrCameraView } from '../../components/organisms/OcrCameraView';
+import { SearchInput } from '../../components/molecules/SearchInput';
+import { LoadingOverlay } from '../../components/atoms/LoadingOverlay';
 import styles from '../../styles/index.styles';
 
-/**
- * Some quick-access demo products for the hackathon presentations.
- */
 const DEMO_BARCODES = [
   { name: 'Toblerone', barcode: '7612100040789', emoji: '🍫' },
   { name: 'Ovomaltine', barcode: '7610200050505', emoji: '🥤' },
@@ -28,6 +20,38 @@ const DEMO_BARCODES = [
   { name: 'Nutella', barcode: '3017620422003', emoji: '🫙' },
   { name: 'Ricola', barcode: '7610818001037', emoji: '🌿' },
 ];
+
+function normalizeBarcode(value?: string): string | undefined {
+  if (!value) return undefined;
+  const compact = value.replace(/\s+/g, '');
+  const exactDigits = compact.match(/\b\d{8,14}\b/);
+  if (exactDigits) return exactDigits[0];
+  const cleanedDigits = compact.replace(/\D/g, '');
+  return cleanedDigits.length >= 8 && cleanedDigits.length <= 14 ? cleanedDigits : undefined;
+}
+
+function normalizeLot(value?: string): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.replace(/\s+/g, '').trim();
+  return normalized.length >= 3 ? normalized : undefined;
+}
+
+function buildSearchCandidates(name?: string, brand?: string): string[] {
+  const candidates = new Set<string>();
+  const clean = (v?: string) => (v || '').replace(/[|:;,_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleanName = clean(name);
+  const cleanBrand = clean(brand);
+  if (cleanName) candidates.add(cleanName);
+  if (cleanBrand && cleanName) candidates.add(`${cleanBrand} ${cleanName}`);
+  if (cleanName) {
+    const words = cleanName.split(' ').filter(Boolean);
+    if (words.length > 2) {
+      candidates.add(words.slice(0, 2).join(' '));
+      candidates.add(words.slice(0, 3).join(' '));
+    }
+  }
+  return Array.from(candidates).filter((c) => c.length >= 3).slice(0, 4);
+}
 
 export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -41,64 +65,27 @@ export default function ScannerScreen() {
   const cameraRef = useRef<CameraView>(null);
   const router = useRouter();
 
-  const normalizeBarcode = (value?: string): string | undefined => {
-    if (!value) return undefined;
-    const compact = value.replace(/\s+/g, '');
-    const exactDigits = compact.match(/\b\d{8,14}\b/);
-    if (exactDigits) return exactDigits[0];
-    const cleanedDigits = compact.replace(/\D/g, '');
-    return cleanedDigits.length >= 8 && cleanedDigits.length <= 14 ? cleanedDigits : undefined;
-  };
-
-  const normalizeLot = (value?: string): string | undefined => {
-    if (!value) return undefined;
-    const normalized = value.replace(/\s+/g, '').trim();
-    return normalized.length >= 3 ? normalized : undefined;
-  };
-
-  const buildSearchCandidates = (name?: string, brand?: string): string[] => {
-    const candidates = new Set<string>();
-    const clean = (value?: string) =>
-      (value || '')
-        .replace(/[|:;,_]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const cleanName = clean(name);
-    const cleanBrand = clean(brand);
-
-    if (cleanName) candidates.add(cleanName);
-    if (cleanBrand && cleanName) candidates.add(`${cleanBrand} ${cleanName}`);
-
-    if (cleanName) {
-      const words = cleanName.split(' ').filter(Boolean);
-      if (words.length > 2) {
-        candidates.add(words.slice(0, 2).join(' '));
-        candidates.add(words.slice(0, 3).join(' '));
-      }
+  const ensurePermission = async (): Promise<boolean> => {
+    if (permission?.granted) return true;
+    const result = await requestPermission();
+    if (!result.granted) {
+      Alert.alert('Kamera Zugriff', 'Bitte erlaube den Kamera-Zugriff in den Einstellungen.');
+      return false;
     }
-
-    return Array.from(candidates).filter((c) => c.length >= 3).slice(0, 4);
+    return true;
   };
 
-  /**
-   * Navigates to the product details.
-   * It checks if the ID looks like a lot number or a standard barcode.
-   */
   const handleBarcode = (id: string) => {
     if (loading) return;
     setLoading(true);
     setShowCamera(false);
     scannedRef.current = false;
-
-    // Simple heuristic: If it's not a number or starts with L/BATCH, treat it as a lot number.
     const isLot = isNaN(Number(id)) || id.toUpperCase().startsWith('L') || id.toUpperCase().startsWith('BATCH');
-
     router.push(`/product/${id}?isLot=${isLot}`);
     setLoading(false);
   };
 
-  const handleBarcodeScanned = ({ data }: { data: string }) => {
+  const handleBarcodeScanned = (data: string) => {
     if (scannedRef.current) return;
     scannedRef.current = true;
     handleBarcode(data);
@@ -107,75 +94,34 @@ export default function ScannerScreen() {
   const handleManualSearch = () => {
     const trimmed = manualBarcode.trim();
     if (!trimmed) return;
-    if (trimmed.length < 3) {
-      Alert.alert('Eingabe zu kurz', 'Bitte mindestens 3 Zeichen eingeben.');
-      return;
-    }
+    if (trimmed.length < 3) { Alert.alert('Eingabe zu kurz', 'Bitte mindestens 3 Zeichen eingeben.'); return; }
     handleBarcode(trimmed);
     setManualBarcode('');
   };
 
-  const startScanning = async () => {
-    if (!permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) {
-        Alert.alert('Kamera Zugriff', 'Bitte erlaube den Kamera-Zugriff in den Einstellungen.');
-        return;
-      }
-    }
-    scannedRef.current = false;
-    setShowCamera(true);
-  };
-
-  const startOcrScan = async () => {
-    if (!permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) {
-        Alert.alert('Kamera Zugriff', 'Bitte erlaube den Kamera-Zugriff in den Einstellungen.');
-        return;
-      }
-    }
-    setShowOcrCamera(true);
-  };
-
-  /**
-   * Logic for the AI-powered OCR scan.
-   * It takes a photo, sends it to Gemini, and navigates based on what was found
-   * (Barcode, Lot Number, or even just a Product Name).
-   */
   const handleOcrCapture = async () => {
     if (ocrLoading || ocrCapturing || !cameraRef.current) return;
     try {
+      setOcrLoading(true);
       setOcrCapturing(true);
       const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.4 });
       setOcrCapturing(false);
-      if (!photo?.base64) {
-        Alert.alert('Fehler', 'Foto konnte nicht aufgenommen werden.');
-        return;
+      
+      if (!photo?.base64) { 
+        setOcrLoading(false);
+        Alert.alert('Fehler', 'Foto konnte nicht aufgenommen werden.'); 
+        return; 
       }
 
-      // After the shot is taken, we hide the camera and show a white processing screen.
-      setOcrLoading(true);
       const result = await analyzeProductImage(photo.base64);
-
       const barcode = normalizeBarcode(result.barcode);
       const lotNumber = normalizeLot(result.lotNumber);
 
-      if (barcode) {
-        setShowOcrCamera(false);
-        router.push(`/product/${barcode}`);
-        return;
-      }
-
-      if (lotNumber) {
-        setShowOcrCamera(false);
-        router.push(`/product/${lotNumber}?isLot=true&ean=${barcode || ''}`);
-        return;
-      }
+      if (barcode) { setShowOcrCamera(false); router.push(`/product/${barcode}`); return; }
+      if (lotNumber) { setShowOcrCamera(false); router.push(`/product/${lotNumber}?isLot=true&ean=${barcode || ''}`); return; }
 
       if (result.productName) {
-        const candidates = buildSearchCandidates(result.productName, result.brand);
-        for (const candidate of candidates) {
+        for (const candidate of buildSearchCandidates(result.productName, result.brand)) {
           const searchResult = await searchProductsByName(candidate);
           if (searchResult.found && searchResult.product?.code) {
             setShowOcrCamera(false);
@@ -183,7 +129,6 @@ export default function ScannerScreen() {
             return;
           }
         }
-
         setShowOcrCamera(false);
         Alert.alert(
           `Produkt erkannt: ${result.productName}`,
@@ -194,108 +139,47 @@ export default function ScannerScreen() {
         );
         return;
       }
-
       setShowOcrCamera(false);
       Alert.alert('Nichts erkannt', 'Halte die Kamera näher an das Produkt und versuche es erneut.');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'OCR-Analyse fehlgeschlagen.';
-      Alert.alert('Fehler', message);
+      Alert.alert('Fehler', err instanceof Error ? err.message : 'OCR-Analyse fehlgeschlagen.');
     } finally {
       setOcrCapturing(false);
       setOcrLoading(false);
     }
   };
 
-  // ── OCR camera view ────────────────────────────────────────────────────────
   if (showOcrCamera && permission?.granted) {
     return (
-      <View style={styles.cameraContainer}>
-        {ocrLoading ? (
-          <View style={styles.ocrProcessingScreen}>
-            <ActivityIndicator size="large" color="#006EB7" />
-            <Text style={styles.ocrProcessingText}>KI analysiert dein Foto...</Text>
-          </View>
-        ) : (
-          <>
-            <CameraView
-              ref={cameraRef}
-              style={styles.camera}
-              facing="back"
-              active={!ocrCapturing}
-            />
-            <View style={styles.overlay}>
-              <View style={styles.ocrFrame}>
-                <View style={[styles.corner, styles.topLeft]} />
-                <View style={[styles.corner, styles.topRight]} />
-                <View style={[styles.corner, styles.bottomLeft]} />
-                <View style={[styles.corner, styles.bottomRight]} />
-              </View>
-              <Text style={styles.scanHint}>Produkt/Label in den Rahmen halten</Text>
-              <TouchableOpacity
-                style={[styles.captureBtn, ocrCapturing && styles.captureBtnDisabled]}
-                onPress={handleOcrCapture}
-                activeOpacity={0.8}
-                disabled={ocrCapturing}
-              >
-                {ocrCapturing
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <View style={styles.captureBtnInner} />
-                }
-              </TouchableOpacity>
-            </View>
-            {!ocrCapturing && (
-              <TouchableOpacity style={styles.closeCameraBtn} onPress={() => setShowOcrCamera(false)}>
-                <Ionicons name="close-circle" size={44} color="#fff" />
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-      </View>
+      <OcrCameraView
+        cameraRef={cameraRef}
+        isCapturing={ocrCapturing}
+        isProcessing={ocrLoading}
+        onCapture={handleOcrCapture}
+        onClose={() => setShowOcrCamera(false)}
+      />
     );
   }
 
-  // ── Barcode camera view ────────────────────────────────────────────────────
   if (showCamera && permission?.granted) {
     return (
-      <View style={styles.cameraContainer}>
-        <CameraView
-          style={styles.camera}
-          facing="back"
-          onBarcodeScanned={handleBarcodeScanned}
-          barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'qr', 'upc_a', 'upc_e'] }}
-        />
-        <View style={styles.overlay}>
-          <View style={styles.scanFrame}>
-            <View style={[styles.corner, styles.topLeft]} />
-            <View style={[styles.corner, styles.topRight]} />
-            <View style={[styles.corner, styles.bottomLeft]} />
-            <View style={[styles.corner, styles.bottomRight]} />
-          </View>
-          <Text style={styles.scanHint}>Barcode in den Rahmen halten</Text>
-        </View>
-        <TouchableOpacity style={styles.closeCameraBtn} onPress={() => setShowCamera(false)}>
-          <Ionicons name="close-circle" size={44} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      <BarcodeCameraView
+        onBarcodeScanned={handleBarcodeScanned}
+        onClose={() => setShowCamera(false)}
+      />
     );
   }
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#006EB7" />
-        <Text style={styles.loadingText}>Lade Produktdaten...</Text>
+      <View style={styles.container}>
+        <LoadingOverlay message="Lade Produktdaten..." />
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Hero Welcome Section */}
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
         <View style={styles.heroLogoWrap}>
           <Image source={require('../../RootRouteIcon.png')} style={styles.heroLogo} resizeMode="contain" />
@@ -306,36 +190,15 @@ export default function ScannerScreen() {
         </Text>
       </View>
 
-      {/* Scan buttons */}
-      <TouchableOpacity
-        style={styles.scanButton}
-        onPress={startScanning}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel="Produktions-Code mit Barcode-Scanner scannen"
-      >
-        <LinearGradient
-          colors={['#006EB7', '#004B87']}
-          style={styles.scanButtonGradient}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        >
+      <TouchableOpacity style={styles.scanButton} onPress={async () => { if (await ensurePermission()) { scannedRef.current = false; setShowCamera(true); } }} activeOpacity={0.85}>
+        <LinearGradient colors={['#006EB7', '#004B87']} style={styles.scanButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
           <Ionicons name="barcode-outline" size={30} color="#fff" />
           <Text style={styles.scanButtonText}>Produktions-Code scannen</Text>
         </LinearGradient>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.ocrButton}
-        onPress={startOcrScan}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel="Foto aufnehmen, KI erkennt Produkt automatisch"
-      >
-        <LinearGradient
-          colors={['#7C3AED', '#5B21B6']}
-          style={styles.scanButtonGradient}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        >
+      <TouchableOpacity style={styles.ocrButton} onPress={async () => { if (await ensurePermission()) setShowOcrCamera(true); }} activeOpacity={0.85}>
+        <LinearGradient colors={['#7C3AED', '#5B21B6']} style={styles.scanButtonGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
           <Ionicons name="camera-outline" size={28} color="#fff" />
           <View style={styles.ocrBtnTextWrap}>
             <Text style={styles.scanButtonText}>Foto / OCR scannen</Text>
@@ -344,7 +207,6 @@ export default function ScannerScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Divider + Manual input */}
       <View style={styles.divider}>
         <View style={styles.dividerLine} />
         <Text style={styles.dividerText}>oder manuell eingeben</Text>
@@ -352,32 +214,19 @@ export default function ScannerScreen() {
       </View>
 
       <View style={styles.manualInput}>
-        <TextInput
-          style={styles.input}
-          placeholder="Produktionsnummer (z.B. L1234)..."
-          placeholderTextColor="#6B7280"
+        <SearchInput
           value={manualBarcode}
           onChangeText={setManualBarcode}
-          keyboardType="default"
+          placeholder="Produktionsnummer (z.B. L1234)..."
+          onSubmit={handleManualSearch}
           autoCapitalize="characters"
-          onSubmitEditing={handleManualSearch}
-          returnKeyType="search"
         />
-        <TouchableOpacity style={styles.searchBtn} onPress={handleManualSearch}>
-          <Ionicons name="search" size={22} color="#fff" />
-        </TouchableOpacity>
       </View>
 
-      {/* Demo grid */}
       <Text style={styles.demoTitle}>Demo-Produkte</Text>
       <View style={styles.demoGrid}>
         {DEMO_BARCODES.map((item) => (
-          <TouchableOpacity
-            key={item.barcode}
-            style={styles.demoItem}
-            onPress={() => handleBarcode(item.barcode)}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity key={item.barcode} style={styles.demoItem} onPress={() => handleBarcode(item.barcode)} activeOpacity={0.7}>
             <Text style={styles.demoEmoji}>{item.emoji}</Text>
             <Text style={styles.demoName}>{item.name}</Text>
           </TouchableOpacity>

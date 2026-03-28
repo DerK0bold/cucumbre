@@ -1,15 +1,15 @@
 import { useState, useCallback } from 'react';
-import {
-  View, Text, ScrollView, TouchableOpacity,
-  TextInput, KeyboardAvoidingView, Platform, FlatList,
-} from 'react-native';
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { getOrCreateOrder, getAllOrders, saveOrder, Order } from '../../services/orderTracking';
-import styles from '../../styles/tracking.styles';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getOrCreateOrder, saveOrder } from '../../services/orderTracking';
+import { GradientHeader } from '../../components/atoms/GradientHeader';
+import { SectionHeader } from '../../components/atoms/SectionHeader';
+import { SearchInput } from '../../components/molecules/SearchInput';
+import { OrderCard } from '../../components/molecules/OrderCard';
+import { RetailerChip } from '../../components/molecules/RetailerChip';
+import styles from '../../styles/tracking.styles';
 
 const HISTORY_KEY = '@foodtrace_order_history';
 
@@ -33,146 +33,100 @@ const EXAMPLE_ORDERS = [
   { id: 'DHL-1Z999AA10123456784', label: 'DHL', logo: '📦' },
 ];
 
+const RETAILERS = [
+  { name: 'Migros', logo: '🛒', prefix: 'MIG-...' },
+  { name: 'Coop', logo: '🏪', prefix: 'COOP-...' },
+  { name: 'Post CH', logo: '📮', prefix: '98/99...' },
+  { name: 'DHL', logo: '📦', prefix: 'DHL-...' },
+  { name: 'Amazon', logo: '🟠', prefix: 'AMZ-...' },
+  { name: 'Andere', logo: '🏷️', prefix: 'Beliebig' },
+];
+
 export default function TrackingTab() {
   const router = useRouter();
   const [input, setInput] = useState('');
   const [recentIds, setRecentIds] = useState<string[]>([]);
 
   useFocusEffect(
-    useCallback(() => {
-      loadOrderHistory().then(setRecentIds);
-    }, [])
+    useCallback(() => { loadOrderHistory().then(setRecentIds); }, [])
   );
 
   const handleTrack = async (orderId: string) => {
     const id = orderId.trim();
     if (!id) return;
-    const order = getOrCreateOrder(id);
-    saveOrder(order);
+    saveOrder(getOrCreateOrder(id));
     await addToOrderHistory(id);
     setInput('');
     router.push(`/tracking/${encodeURIComponent(id)}`);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {/* Hero */}
-        <LinearGradient colors={['#006EB7', '#004B87']} style={styles.hero}>
-          <Text style={styles.heroIcon}>📦</Text>
-          <Text style={styles.heroTitle}>Lieferung verfolgen</Text>
-          <Text style={styles.heroSubtitle}>
-            Gib deine Bestellnummer ein – von Migros, Coop, Post, DHL oder einem anderen Anbieter.
-          </Text>
-        </LinearGradient>
+        <GradientHeader
+          icon="📦"
+          title="Lieferung verfolgen"
+          subtitle="Gib deine Bestellnummer ein – von Migros, Coop, Post, DHL oder einem anderen Anbieter."
+          style={styles.hero}
+        />
 
-        {/* Input */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Bestellnummer eingeben</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="z.B. MIG-X7K2P9QR4 oder 9945678..."
-              placeholderTextColor="#4B5563"
-              value={input}
-              onChangeText={setInput}
-              autoCapitalize="characters"
-              returnKeyType="search"
-              onSubmitEditing={() => handleTrack(input)}
-            />
-            <TouchableOpacity
-              style={[styles.trackBtn, !input.trim() && styles.trackBtnDisabled]}
-              onPress={() => handleTrack(input)}
-              disabled={!input.trim()}
-            >
-              <Ionicons name="search" size={22} color="#fff" />
-            </TouchableOpacity>
-          </View>
+          <SearchInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="z.B. MIG-X7K2P9QR4 oder 9945678..."
+            onSubmit={() => handleTrack(input)}
+            autoCapitalize="characters"
+          />
           <Text style={styles.inputHint}>
             Die Bestellnummer findest du in der Bestätigungs-E-Mail des Händlers.
           </Text>
         </View>
 
-        {/* Recent orders */}
         {recentIds.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Zuletzt verfolgt</Text>
+            <SectionHeader title="Zuletzt verfolgt" />
             {recentIds.map((id) => {
               const order = getOrCreateOrder(id);
               return (
-                <TouchableOpacity
+                <OrderCard
                   key={id}
-                  style={styles.recentCard}
+                  variant="recent"
+                  logo={order.retailerLogo}
+                  retailer={order.retailer}
+                  orderId={id}
+                  status={order.currentStatus}
+                  isDone={order.currentStatus === 'Zugestellt'}
                   onPress={() => handleTrack(id)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.recentLogo}>{order.retailerLogo}</Text>
-                  <View style={styles.recentInfo}>
-                    <Text style={styles.recentRetailer}>{order.retailer}</Text>
-                    <Text style={styles.recentId}>{id}</Text>
-                  </View>
-                  <View style={styles.recentStatus}>
-                    <View style={[
-                      styles.statusDot,
-                      order.currentStatus === 'Zugestellt' ? styles.dotDone : styles.dotActive,
-                    ]} />
-                    <Text style={[
-                      styles.recentStatusText,
-                      order.currentStatus === 'Zugestellt' && styles.recentStatusDone,
-                    ]}>
-                      {order.currentStatus}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="#4B5563" />
-                </TouchableOpacity>
+                />
               );
             })}
           </View>
         )}
 
-        {/* Example orders */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Beispiele ausprobieren</Text>
-          <Text style={styles.sectionSubtitle}>Tippe auf eine Demo-Bestellnummer um es auszuprobieren.</Text>
+          <SectionHeader
+            title="Beispiele ausprobieren"
+            subtitle="Tippe auf eine Demo-Bestellnummer um es auszuprobieren."
+          />
           {EXAMPLE_ORDERS.map((ex) => (
-            <TouchableOpacity
+            <OrderCard
               key={ex.id}
-              style={styles.exampleCard}
+              variant="example"
+              logo={ex.logo}
+              label={ex.label}
+              orderId={ex.id}
               onPress={() => handleTrack(ex.id)}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.exampleLogo}>{ex.logo}</Text>
-              <View style={styles.exampleInfo}>
-                <Text style={styles.exampleLabel}>{ex.label}</Text>
-                <Text style={styles.exampleId}>{ex.id}</Text>
-              </View>
-              <View style={styles.tryBtn}>
-                <Text style={styles.tryBtnText}>Verfolgen</Text>
-              </View>
-            </TouchableOpacity>
+            />
           ))}
         </View>
 
-        {/* Supported retailers */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Unterstützte Anbieter</Text>
+          <SectionHeader title="Unterstützte Anbieter" />
           <View style={styles.retailerGrid}>
-            {[
-              { name: 'Migros', logo: '🛒', prefix: 'MIG-...' },
-              { name: 'Coop', logo: '🏪', prefix: 'COOP-...' },
-              { name: 'Post CH', logo: '📮', prefix: '98/99...' },
-              { name: 'DHL', logo: '📦', prefix: 'DHL-...' },
-              { name: 'Amazon', logo: '🟠', prefix: 'AMZ-...' },
-              { name: 'Andere', logo: '🏷️', prefix: 'Beliebig' },
-            ].map((r) => (
-              <View key={r.name} style={styles.retailerChip}>
-                <Text style={styles.retailerChipLogo}>{r.logo}</Text>
-                <Text style={styles.retailerChipName}>{r.name}</Text>
-                <Text style={styles.retailerChipPrefix}>{r.prefix}</Text>
-              </View>
+            {RETAILERS.map((r) => (
+              <RetailerChip key={r.name} logo={r.logo} name={r.name} prefix={r.prefix} />
             ))}
           </View>
         </View>
@@ -182,4 +136,3 @@ export default function TrackingTab() {
     </KeyboardAvoidingView>
   );
 }
-

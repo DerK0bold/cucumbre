@@ -1,23 +1,15 @@
 import { useState, useRef, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  ScrollView,
+  View, Text, TextInput, TouchableOpacity, FlatList,
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { sendMessage, ChatMessage, QUICK_SUGGESTIONS } from '../../services/aiAssistant';
 import { HAS_GEMINI_API_KEY } from '../../constants/config';
+import { ChatBubble } from '../../components/molecules/ChatBubble';
 import styles from '../../styles/ai.styles';
-
-const API_KEY_SET = HAS_GEMINI_API_KEY;
 
 interface Message extends ChatMessage {
   id: string;
@@ -27,8 +19,7 @@ interface Message extends ChatMessage {
 const WELCOME_MESSAGE: Message = {
   id: 'welcome',
   role: 'assistant',
-  content:
-    'Hallo! Ich bin dein KI-Assistent für Lebensmittel. 🥗\n\nFrag mich über Inhaltsstoffe, Herkunft, Nachhaltigkeit oder Ernährung – ich helfe dir gerne weiter!',
+  content: 'Hallo! Ich bin dein KI-Assistent für Lebensmittel. 🥗\n\nFrag mich über Inhaltsstoffe, Herkunft, Nachhaltigkeit oder Ernährung – ich helfe dir gerne weiter!',
 };
 
 export default function AIScreen() {
@@ -44,23 +35,13 @@ export default function AIScreen() {
   const handleSend = useCallback(async (text?: string) => {
     const messageText = (text ?? input).trim();
     if (!messageText || loading) return;
-
     setInput('');
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: messageText,
-    };
-
-    const loadingMsg: Message = {
-      id: 'loading',
-      role: 'assistant',
-      content: '',
-      isLoading: true,
-    };
-
-    setMessages((prev) => [...prev, userMsg, loadingMsg]);
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now().toString(), role: 'user', content: messageText },
+      { id: 'loading', role: 'assistant', content: '', isLoading: true },
+    ]);
     setLoading(true);
     scrollToBottom();
 
@@ -68,19 +49,12 @@ export default function AIScreen() {
       const history: ChatMessage[] = messages
         .filter((m) => !m.isLoading && m.id !== 'welcome')
         .map((m) => ({ role: m.role, content: m.content }));
-
       const reply = await sendMessage(history, messageText);
-
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== 'loading'),
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: reply,
-        },
+        { id: (Date.now() + 1).toString(), role: 'assistant', content: reply },
       ]);
     } catch (err: any) {
-      console.error("Gemini Error: ", err);
       const errText =
         err?.message?.includes('API key') || err?.status === 401 || err?.status === 403
           ? 'Gemini API-Key ungueltig oder gesperrt. Bitte setze EXPO_PUBLIC_GEMINI_API_KEY in .env.'
@@ -95,48 +69,15 @@ export default function AIScreen() {
     }
   }, [input, loading, messages, scrollToBottom]);
 
-  const handleClear = useCallback(() => {
-    setMessages([WELCOME_MESSAGE]);
-  }, []);
-
-  const renderMessage = useCallback(({ item }: { item: Message }) => {
-    if (item.isLoading) {
-      return (
-        <View style={styles.loadingBubble}>
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#006EB7" />
-            <Text style={styles.loadingText}>Denkt nach…</Text>
-          </View>
-        </View>
-      );
-    }
-
-    const isUser = item.role === 'user';
-    return (
-      <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
-        {!isUser && (
-          <View style={styles.aiAvatar}>
-            <Text style={styles.aiAvatarEmoji}>🤖</Text>
-          </View>
-        )}
-        <View style={isUser ? styles.userBubble : styles.aiBubble}>
-          <Text style={isUser ? styles.userMessageText : styles.aiMessageText}>
-            {item.content}
-          </Text>
-        </View>
-      </View>
-    );
-  }, []);
-
-  if (!API_KEY_SET) {
+  if (!HAS_GEMINI_API_KEY) {
     return (
       <View style={styles.noKeyContainer}>
         <Text style={styles.noKeyEmoji}>🔑</Text>
         <Text style={styles.noKeyTitle}>API-Key benötigt</Text>
         <Text style={styles.noKeyText}>
-          Setze deinen Google Gemini API-Key in{`\n`}
+          Setze deinen Google Gemini API-Key in{'\n'}
           <Text style={styles.noKeyCode}>.env</Text>
-          {`\n`}als EXPO_PUBLIC_GEMINI_API_KEY.
+          {'\n'}als EXPO_PUBLIC_GEMINI_API_KEY.
         </Text>
         <View style={styles.noKeySteps}>
           <Text style={styles.noKeyStep}>1. Gehe zu aistudio.google.com</Text>
@@ -155,7 +96,6 @@ export default function AIScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        {/* Header */}
         <LinearGradient colors={['#006EB7', '#004B87']} style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.headerAvatarContainer}>
@@ -166,12 +106,15 @@ export default function AIScreen() {
               <Text style={styles.headerSubtitle}>Lebensmittel-Experte</Text>
             </View>
           </View>
-          <TouchableOpacity onPress={handleClear} style={styles.clearBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity
+            onPress={() => setMessages([WELCOME_MESSAGE])}
+            style={styles.clearBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Ionicons name="trash-outline" size={20} color="#6B7280" />
           </TouchableOpacity>
         </LinearGradient>
 
-        {/* Quick suggestions (only when no real conversation yet) */}
         {messages.length <= 1 && (
           <ScrollView
             horizontal
@@ -180,30 +123,27 @@ export default function AIScreen() {
             contentContainerStyle={styles.suggestionsContent}
           >
             {QUICK_SUGGESTIONS.map((s, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.suggestionChip}
-                onPress={() => handleSend(s)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity key={i} style={styles.suggestionChip} onPress={() => handleSend(s)} activeOpacity={0.7}>
                 <Text style={styles.suggestionText}>{s}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         )}
 
-        {/* Message list */}
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
+          renderItem={({ item }) => (
+            item.isLoading
+              ? <ChatBubble isLoading />
+              : <ChatBubble role={item.role} content={item.content} />
+          )}
           contentContainerStyle={styles.messageListContent}
           onContentSizeChange={scrollToBottom}
           showsVerticalScrollIndicator={false}
         />
 
-        {/* Input bar */}
         <View style={styles.inputBar}>
           <TextInput
             style={[styles.textInput, { maxHeight: 120 }]}
@@ -215,7 +155,7 @@ export default function AIScreen() {
             maxLength={500}
             returnKeyType="send"
             onSubmitEditing={() => handleSend()}
-            blurOnSubmit={false}
+            submitBehavior="newline"
             editable={!loading}
           />
           <TouchableOpacity
@@ -224,11 +164,10 @@ export default function AIScreen() {
             activeOpacity={0.8}
             disabled={!input.trim() || loading}
           >
-            {loading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons name="send" size={20} color="#fff" />
-            )}
+            {loading
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="send" size={20} color="#fff" />
+            }
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

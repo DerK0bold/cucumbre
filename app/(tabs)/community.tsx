@@ -1,16 +1,13 @@
 import { useState, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  getGamificationData,
-  GamificationData,
-  getTrustScore,
-  getLevel,
-  TOTAL_ACHIEVEMENTS,
-  ALL_ACHIEVEMENTS,
+  getGamificationData, GamificationData, getTrustScore,
+  getLevel, TOTAL_ACHIEVEMENTS,
 } from '../../services/gamification';
+import { AchievementsModal } from '../../components/organisms/AchievementsModal';
 import styles from '../../styles/community.styles';
 
 interface LeaderboardUser {
@@ -39,31 +36,18 @@ export default function CommunityScreen() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [showAchievements, setShowAchievements] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { loadData(); }, []));
 
   const loadData = async () => {
     const data = await getGamificationData();
     setUserData(data);
-
     const score = getTrustScore(data);
     const lvl = getLevel(score);
-
     const me: LeaderboardUser = {
-      id: 'me',
-      name: 'Du',
-      avatar: '🥑',
-      points: score * 10,
-      scans: data.totalScans,
-      level: lvl.label,
-      isMe: true,
+      id: 'me', name: 'Du', avatar: '🥑',
+      points: score * 10, scans: data.totalScans, level: lvl.label, isMe: true,
     };
-
-    const sorted = [...MOCK_LEADERBOARD, me].sort((a, b) => b.points - a.points);
-    setLeaderboard(sorted);
+    setLeaderboard([...MOCK_LEADERBOARD, me].sort((a, b) => b.points - a.points));
   };
 
   const trustScore = userData ? getTrustScore(userData) : 0;
@@ -75,42 +59,20 @@ export default function CommunityScreen() {
     return (
       <View style={[styles.leaderItem, item.isMe && styles.leaderItemMe]}>
         <View style={styles.rankCol}>
-          {isTop3 ? (
-            <Text style={styles.medalText}>{RANK_MEDALS[index]}</Text>
-          ) : (
-            <Text style={[styles.rankText, item.isMe && styles.rankTextMe]}>
-              #{index + 1}
-            </Text>
-          )}
+          {isTop3
+            ? <Text style={styles.medalText}>{RANK_MEDALS[index]}</Text>
+            : <Text style={[styles.rankText, item.isMe && styles.rankTextMe]}>#{index + 1}</Text>
+          }
         </View>
-
-        <View
-          style={[styles.avatar, isTop3 && { borderColor: RANK_COLORS[index] }]}
-        >
+        <View style={[styles.avatar, isTop3 && { borderColor: RANK_COLORS[index] }]}>
           <Text style={styles.avatarEmoji}>{item.avatar}</Text>
         </View>
-
         <View style={styles.userInfo}>
-          <Text style={[styles.userName, item.isMe && styles.userNameMe]}>
-            {item.name}
-          </Text>
+          <Text style={[styles.userName, item.isMe && styles.userNameMe]}>{item.name}</Text>
           <Text style={styles.userDetails}>{item.level} · {item.scans} Scans</Text>
         </View>
-
-        <View
-          style={[
-            styles.pointsBox,
-            item.isMe && styles.pointsBoxMe,
-            isTop3 && { borderColor: RANK_COLORS[index] },
-          ]}
-        >
-          <Text
-            style={[
-              styles.pointsValue,
-              item.isMe && { color: '#006EB7' },
-              isTop3 && { color: RANK_COLORS[index] },
-            ]}
-          >
+        <View style={[styles.pointsBox, item.isMe && styles.pointsBoxMe, isTop3 && { borderColor: RANK_COLORS[index] }]}>
+          <Text style={[styles.pointsValue, item.isMe && { color: '#006EB7' }, isTop3 && { color: RANK_COLORS[index] }]}>
             {item.points}
           </Text>
           <Text style={styles.pointsLabel}>Pkt.</Text>
@@ -125,13 +87,14 @@ export default function CommunityScreen() {
         data={leaderboard}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
+        renderItem={renderLeaderItem}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListHeaderComponent={
           <>
-            {/* Gradient Header */}
             <LinearGradient colors={['#006EB7', '#004B87']} style={styles.gradientHeader}>
               <Text style={styles.gradientTitle}>Community</Text>
               <Text style={styles.gradientSubtitle}>Dein Fortschritt auf einen Blick</Text>
-
               <View style={styles.levelCard}>
                 <View style={styles.levelLeft}>
                   <Text style={{ fontSize: 36 }}>{level.emoji}</Text>
@@ -146,13 +109,11 @@ export default function CommunityScreen() {
                   </View>
                 )}
               </View>
-
               <View style={styles.progressBarBg}>
                 <View style={[styles.progressFill, { width: `${trustScore}%`, backgroundColor: level.color }]} />
               </View>
             </LinearGradient>
 
-            {/* Stats Row */}
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
                 <Ionicons name="shield-checkmark-outline" size={20} color="#4ADE80" />
@@ -173,12 +134,7 @@ export default function CommunityScreen() {
               </View>
             </View>
 
-            {/* Achievements Button */}
-            <TouchableOpacity
-              style={styles.achievementsBtn}
-              onPress={() => setShowAchievements(true)}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={styles.achievementsBtn} onPress={() => setShowAchievements(true)} activeOpacity={0.8}>
               <Ionicons name="trophy-outline" size={18} color="#006EB7" />
               <Text style={styles.achievementsBtnText}>
                 Errungenschaften ansehen ({userData?.achievements.length ?? 0}/{TOTAL_ACHIEVEMENTS})
@@ -186,68 +142,19 @@ export default function CommunityScreen() {
               <Ionicons name="chevron-forward" size={16} color="#006EB7" />
             </TouchableOpacity>
 
-            {/* Leaderboard Section Header */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>🏆 Bestenliste</Text>
               <Text style={styles.sectionDate}>März 2026</Text>
             </View>
           </>
         }
-        renderItem={renderLeaderItem}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
-      {/* Achievements Modal */}
-      <Modal
+      <AchievementsModal
         visible={showAchievements}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowAchievements(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAchievements(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.modalInner}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                🏅 Errungenschaften ({userData?.achievements.length ?? 0}/{TOTAL_ACHIEVEMENTS})
-              </Text>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowAchievements(false)}>
-                <Ionicons name="close" size={18} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView contentContainerStyle={styles.achievementsGrid}>
-              {ALL_ACHIEVEMENTS.map((ach) => {
-                const unlocked = userData?.achievements.find((a) => a.id === ach.id);
-                return (
-                  <View
-                    key={ach.id}
-                    style={[
-                      styles.achievementCard,
-                      !unlocked && styles.achievementCardLocked,
-                      { width: '30%', flexGrow: 1, minWidth: 90 },
-                    ]}
-                  >
-                    <Text style={[styles.achievementEmoji, !unlocked && styles.achievementEmojiLocked]}>
-                      {unlocked ? ach.emoji : '🔒'}
-                    </Text>
-                    <Text style={[styles.achievementTitle, !unlocked && styles.achievementTitleLocked]}>
-                      {ach.title}
-                    </Text>
-                    <Text style={[styles.achievementDesc, !unlocked && styles.achievementDescLocked]}>
-                      {ach.description}
-                    </Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        userData={userData}
+        onClose={() => setShowAchievements(false)}
+      />
     </View>
   );
 }
